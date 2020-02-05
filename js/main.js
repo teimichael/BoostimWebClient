@@ -1,42 +1,62 @@
-const CODE = {
-    success: 200,
-    failure: -1
-};
-
 const CENTER_SERVER = 'http://35.243.101.217:9510';
-const SOCKET_ENDPOINT = '/boostimsocket';
-
-const URL = {
-    login: CENTER_SERVER + '/access/login',
-    logout: CENTER_SERVER + '/access/logout',
-    getNodeAddress: CENTER_SERVER + '/node/get/best',
-    connectNode: CENTER_SERVER + '/node/connect'
-};
-
-const SUBSCRIBE = {
-    privateChannel: '/user/private/message',
-    groupChannel: '/user/group/message',
-    notifyChannel: '/user/notify'
-};
-
-const SEND = {
-    privateChannel: '/to/private/send',
-    groupChannel: '/to/group/send'
-};
-
-let globalData = {
-    token: '',
-    node: {
-        id: '',
-        address: ''
-    }
-};
-
-let stompClient = null;
 
 function connect() {
+    let authLogin = new NABootSocket.AuthLogin($('#username').val(),$('#password').val())
+    let connectCallbacks = new NABootSocket.ConnectCallbacks({
+        onSuccess: function (data) {
+            $('#my-uuid').val(data);
+            setConnected(true);
+            console.log('Connected');
+            NABootSocket.getConversationList(data,{
+                onSuccess: function (data) {
+                    console.log(data)
+                    for(let i=0;i<data.length;i++) {
+                        NABootSocket.getHistoryRecordList(data[i].uuid, {
+                            onSuccess: function (data) {
+                                console.log(data)
+                                for (let j = 0; j < data.length; j++) {
+                                    showRecord(data[j])
+                                }
+                            },
+                            onFailure: function (data) {
+                                console.log(data)
+                            }
+                        })
+                    }
+                },
+                onFailure: function (data) {
+                    console.log(data)
+                }
+            })
+            /*NABootSocket.getHistoryRecordList('d198b133-62b3-4e68-973d-efdf97e57a94',{
+                onSuccess: function (data) {
+                    console.log(data)
+                },
+                onFailure: function (data) {
+                    console.log(data)
+                }
+            })*/
+        },
+        onFailure: function (message) {
+            alert(message);
+            disconnect();
+        },
+        onReceivedPrivate: function (message) {
+            showRecord(message)
+        },
+        onReceivedGroup: function (message) {
+            showRecord(message)
+        },
+        onReceivedNotify: function (message) {
+            showRecord(message)
+        }
+    })
+
+    NABootSocket.connect(authLogin,connectCallbacks)
+
+
     // Login by HTTP request to obtain token
-    const authLogin = {
+    /*const authLogin = {
         username: $('#username').val(),
         password: $('#password').val()
     };
@@ -55,11 +75,10 @@ function connect() {
         } else {
             alert(data.message);
         }
-    });
-
+    });*/
 }
 
-function getNodeAddress() {
+/*function getNodeAddress() {
     $.ajax({
         type: "GET",
         url: URL.getNodeAddress,
@@ -110,9 +129,9 @@ function connectNode() {
             }
         });
     });
-}
+}*/
 
-function subscribeChannel() {
+/*function subscribeChannel() {
     // Subscribe private chat channel
     stompClient.subscribe(SUBSCRIBE.privateChannel, function (data) {
         data = JSON.parse(data.body);
@@ -145,18 +164,19 @@ function subscribeChannel() {
             alert(data.message)
         }
     });
-}
+}*/
 
 function disconnect() {
-    logout();
+    NABootSocket.disconnect(setConnected(false))
+    /*logout();
     if (stompClient !== null) {
         stompClient.disconnect();
     }
     setConnected(false);
-    console.log("Disconnected");
+    console.log("Disconnected");*/
 }
 
-function logout() {
+/*function logout() {
     $.ajax({
         type: "POST",
         url: URL.logout,
@@ -172,9 +192,18 @@ function logout() {
             alert(data.message);
         }
     });
-}
+}*/
 
 function sendPrivateMessage() {
+    let message = new NABootSocket.Message($("#my-uuid").val(),$("#target-uuid").val(),$("#private-message").val())
+    NABootSocket.sendPrivateMessage(message)
+}
+
+function sendGroupMessage() {
+    let message = new NABootSocket.Message($("#my-uuid").val(),$("#group-uuid").val(),$("#group-message").val())
+    NABootSocket.sendGroupMessage(message)
+}
+/*function sendPrivateMessage() {
     const message = {
         sender: $("#my-uuid").val(),
         receiver: $("#target-uuid").val(),
@@ -190,7 +219,7 @@ function sendGroupMessage() {
         content: $("#group-message").val()
     };
     stompClient.send(SEND.groupChannel, {}, JSON.stringify(message));
-}
+}*/
 
 $(function () {
     $("form").on('submit', function (e) {

@@ -7,15 +7,16 @@
         failure: -1
     };
 
-    /*const SERVER = 'http://localhost:9010';*/
-    const SERVER = 'http://35.243.101.217:9010';
+    const CENTER_SERVER = 'http://35.243.101.217:9510';
+    const SOCKET_ENDPOINT = '/boostimsocket';
 
-
-    const GLOBAL = {
-        loginURL: SERVER + '/access/login',
-        socketURL: SERVER + '/nabootsocket',
-        conversationListURL: SERVER + '/conversation/get/list/',
-        historyRecordListURL: SERVER + '/history/get/'
+    const URL = {
+        login: CENTER_SERVER + '/access/login',
+        logout: CENTER_SERVER + '/access/logout',
+        getNodeAddress: CENTER_SERVER + '/node/get/best',
+        connectNode: CENTER_SERVER + '/node/connect',
+        conversationListURL: CENTER_SERVER + '/conversation/get/list/',
+        historyRecordListURL: CENTER_SERVER + '/history/get/'
     };
 
     const SUBSCRIBE = {
@@ -29,7 +30,59 @@
         groupChannel: '/to/group/send'
     };
 
+    let globalData = {
+        token: '',
+        node: {
+            id: '',
+            address: ''
+        }
+    };
+
     let stompClient = null;
+
+    /*NA_ajax({
+      type:"POST",
+      url:"ajax.php",
+      dataType:"json",
+      data:{"val1":"abc","val2":123,"val3":"456"},
+      beforeSend:function(){
+        //some js code
+      },
+      success:function(msg){
+        console.log(msg)
+      },
+      error:function(){
+        console.log("error")
+      }
+    })*/
+    function NA_ajax(){
+        let ajaxData = {
+            type:arguments[0].type || "GET",
+            url:arguments[0].url || "",
+            async:arguments[0].async || "true",
+            data:arguments[0].data || null,
+            dataType:arguments[0].dataType || "text",
+            contentType:arguments[0].contentType || "application/x-www-form-urlencoded",
+            beforeSend:arguments[0].beforeSend || function(){},
+            success:arguments[0].success || function(){},
+            error:arguments[0].error || function(){}
+        }
+        let xhr = createxmlHttpRequest();
+        xhr.responseType=ajaxData.dataType;
+        xhr.open(ajaxData.type,ajaxData.url,ajaxData.async);
+        ajaxData.beforeSend(xhr)
+        xhr.setRequestHeader("Content-Type",ajaxData.contentType);
+        xhr.send(convertData(ajaxData.data));
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState == 4) {
+                if(xhr.status == 200){
+                    ajaxData.success(xhr.response)
+                }else{
+                    ajaxData.error(xhr.response)
+                }
+            }
+        }
+    }
 
     function createxmlHttpRequest() {
         if (window.ActiveXObject) {
@@ -39,25 +92,35 @@
         }
     }
 
+    function convertData(data){
+        if( typeof data === 'object' ){
+            let convertResult = "" ;
+            for(let c in data){
+                convertResult+= c + "=" + data[c] + "&";
+            }
+            convertResult=convertResult.substring(0,convertResult.length-1)
+            return convertResult;
+        }else{
+            return data;
+        }
+    }
+
     let NABootSocket = {
+        AuthLogin: function(NA_username,NA_password) {
+            this.username = NA_username
+            this.password = NA_password
+        },
         Message: function (NA_sender,NA_receiver,NA_content) {
             this.sender = NA_sender
             this.receiver = NA_receiver
             this.content = NA_content
         },
-        LoginParam: function(NA_username,NA_password,NA_sessionId) {
-            this.sessionId = NA_sessionId
-            this.authLogin = {
-                username: NA_username,
-                password: NA_password
-            }
-        },
         ConnectCallbacks: function() {
             this.onSuccess = arguments[0].onSuccess,
-                this.onFailure = arguments[0].onFailure,
-                this.onReceivedPrivate = arguments[0].onReceivedPrivate,
-                this.onReceivedGroup = arguments[0].onReceivedGroup,
-                this.onReceivedNotify = arguments[0].onReceivedNotify
+            this.onFailure = arguments[0].onFailure,
+            this.onReceivedPrivate = arguments[0].onReceivedPrivate,
+            this.onReceivedGroup = arguments[0].onReceivedGroup,
+            this.onReceivedNotify = arguments[0].onReceivedNotify
         },
 
         sendPrivateMessage: function (NA_msg) {
@@ -66,125 +129,197 @@
         sendGroupMessage: function (NA_msg) {
             stompClient.send(SEND.groupChannel, {}, JSON.stringify(NA_msg));
         },
-        disconnect: function () {
-            if (stompClient !== null) {
-                stompClient.disconnect();
-            }
+        connect(NA_authLogin,NA_connectCallbacks) {
+            // Login by HTTP request to obtain token
+            NA_ajax({
+                type:"POST",
+                url:URL.login,
+                dataType:"json",
+                data:JSON.stringify(NA_authLogin),
+                contentType:'application/json',
+                success:function(data){
+                    console.log(data)
+                    if (data.code === CODE.success) {
+                        globalData.token = data.data;
+                        console.log('Login successfully with token:');
+                        console.log(globalData.token);
+                        NABootSocket.getNodeAddress(NA_connectCallbacks);
+                    } else {
+                        alert(data.message);
+                    }
+                },
+                error:function(){
+                    console.log("error")
+                }
+            })
         },
-        connect: function (NA_loginParam, NA_connectCallbaccks) {
-            let success = arguments[1].onSuccess || function() {}
-            let failure = arguments[1].onFailure || function() {}
-            let receivePrivate = arguments[1].onReceivedPrivate || function() {}
-            let receiveGroup = arguments[1].onReceivedGroup || function() {}
-            let receiveNotify = arguments[1].onReceivedNotify || function() {}
+        getNodeAddress(NA_connectCallbacks) {
+            NA_ajax({
+                type:"GET",
+                url:URL.getNodeAddress,
+                dataType:"json",
+                beforeSend:function(xhr){
+                    xhr.setRequestHeader("Authorization", globalData.token);
+                },
+                success:function(data){
+                    console.log(data)
+                    if (data.code === CODE.success) {
+                        globalData.node = data.data;
+                        console.log('Obtain node successfully:');
+                        console.log(globalData.node);
+                        NABootSocket.connectNode(NA_connectCallbacks);
+                    } else {
+                        alert(data.message);
+                    }
+                },
+                error:function(){
+                    console.log("error")
+                }
+            })
+        },
+        connectNode: function (NA_connectCallbacks) {
+            let success = arguments[0].onSuccess || function() {}
+            let failure = arguments[0].onFailure || function() {}
+            let receivePrivate = arguments[0].onReceivedPrivate || function() {}
+            let receiveGroup = arguments[0].onReceivedGroup || function() {}
+            let receiveNotify = arguments[0].onReceivedNotify || function() {}
 
-            const socket = new SockJS(GLOBAL.socketURL);
+            const socket = new SockJS(globalData.node.address + SOCKET_ENDPOINT);
             stompClient = Stomp.over(socket);
 
             stompClient.connect({}, function () {
+                // Parse session id
                 const urlSlice = stompClient.ws._transport.url.split('/');
                 const sessionId = urlSlice[urlSlice.length - 2];
 
-                let loginParam = NA_loginParam
-                loginParam.sessionId = sessionId
-
-                let xhr = createxmlHttpRequest()
-                xhr.open("POST",GLOBAL.loginURL,true)
-                xhr.responseType='json'
-                xhr.setRequestHeader("Content-Type",'application/json')
-                xhr.send(JSON.stringify(loginParam))
-                xhr.onreadystatechange = function() {
-                    if (xhr.readyState == 4) {
-                        if(xhr.status == 200) {
-                            console.log(xhr.response)
-                            if (xhr.response.code === CODE.success) {
-                                success(xhr.response)
-                                stompClient.subscribe(SUBSCRIBE.privateChannel, function (data) {
-                                    data = JSON.parse(data.body);
-                                    if (data.code === CODE.success) {
-                                        const message = data.data;
-                                        receivePrivate(message)
-                                    } else {
-                                        alert(data.message)
-                                    }
-                                });
-
-                                // Subscribe group chat channel
-                                stompClient.subscribe(SUBSCRIBE.groupChannel, function (data) {
-                                    data = JSON.parse(data.body);
-                                    if (data.code === CODE.success) {
-                                        const message = data.data;
-                                        receiveGroup(message)
-                                    } else {
-                                        alert(data.message)
-                                    }
-                                });
-
-                                // Subscribe notify channel
-                                stompClient.subscribe(SUBSCRIBE.notifyChannel, function (data) {
-                                    data = JSON.parse(data.body);
-                                    if (data.code === CODE.success) {
-                                        const message = data.data;
-                                        receiveNotify(message)
-                                    } else {
-                                        alert(data.message)
-                                    }
-                                });
-                            } else {
-                                console.log('not connect')
-                                failure(xhr.response.message)
-                            }
+                // Connect the node
+                NA_ajax({
+                    type:"POST",
+                    url:URL.connectNode + '/' + globalData.node.id + '/' + sessionId,
+                    dataType:"json",
+                    beforeSend:function(xhr){
+                        xhr.setRequestHeader("Authorization", globalData.token);
+                    },
+                    success:function(data){
+                        console.log(data)
+                        if (data.code === CODE.success) {
+                            success(data.data.uuid)
+                            console.log('Connected');
+                            NABootSocket.subscribeChannel(receivePrivate,receiveGroup,receiveNotify);
+                        } else {
+                            failure(data.message)
+                            disconnect();
                         }
+                    },
+                    error:function(){
+                        console.log("error")
                     }
+                })
+            });
+        },
+        subscribeChannel(receivePrivate,receiveGroup,receiveNotify) {
+            // Subscribe private chat channel
+            stompClient.subscribe(SUBSCRIBE.privateChannel, function (data) {
+                data = JSON.parse(data.body);
+                if (data.code === CODE.success) {
+                    const message = data.data;
+                    receivePrivate(message)
+                } else {
+                    alert(data.message)
                 }
+            });
 
+            // Subscribe group chat channel
+            stompClient.subscribe(SUBSCRIBE.groupChannel, function (data) {
+                data = JSON.parse(data.body);
+                if (data.code === CODE.success) {
+                    const message = data.data;
+                    receiveGroup(message)
+                } else {
+                    alert(data.message)
+                }
+            });
+
+            // Subscribe notify channel
+            stompClient.subscribe(SUBSCRIBE.notifyChannel, function (data) {
+                data = JSON.parse(data.body);
+                if (data.code === CODE.success) {
+                    const message = data.data;
+                    receiveNotify(message)
+                } else {
+                    alert(data.message)
+                }
+            });
+        },
+        disconnect(fn) {
+            let func = fn || function() {}
+            NABootSocket.logout();
+            if (stompClient !== null) {
+                stompClient.disconnect();
+            }
+            func();
+            console.log("Disconnected");
+        },
+        logout() {
+            NA_ajax({
+                type:"POST",
+                url:URL.logout,
+                dataType:"json",
+                beforeSend:function(xhr){
+                    xhr.setRequestHeader("Authorization", globalData.token);
+                },
+                success:function(data){
+                    console.log(data)
+                    if (data.code === CODE.success) {
+                        console.log('Logout successfully.');
+                    } else {
+                        alert(data.message);
+                    }
+                },
+                error:function(){
+                    console.log("error")
+                }
             })
         },
         getConversationList: function (NA_uuid) {
             let success = arguments[1].onSuccess || function() {}
             let failure = arguments[1].onFailure || function() {}
 
-            let xhr = createxmlHttpRequest()
-            xhr.open("GET",GLOBAL.conversationListURL+NA_uuid,true)
-            xhr.responseType='json'
-            xhr.send()
-            xhr.onreadystatechange = function() {
-                if (xhr.readyState == 4) {
-                    if (xhr.status == 200) {
-                        console.log(xhr.response)
-                        if (xhr.response.code === CODE.success) {
-                            console.log('get conversation list')
-                            success(xhr.response.data)
-                        }else {
-                            console.log('not get conversation list')
-                            failure(xhr.response.message)
-                        }
-                    }
+            NA_ajax({
+                type:"GET",
+                url:URL.conversationListURL+NA_uuid,
+                dataType:"json",
+                success:function(msg){
+                    console.log(msg)
+                    console.log('get conversation list')
+                    success(msg.data)
+                },
+                error:function(msg){
+                    console.log("error")
+                    console.log('not get conversation list')
+                    failure(msg.message)
                 }
-            }
+            })
         },
         getHistoryRecordList: function (NA_uuid) {
             let success = arguments[1].onSuccess || function() {}
             let failure = arguments[1].onFailure || function() {}
 
-            let xhr = createxmlHttpRequest()
-            xhr.open("GET",GLOBAL.historyRecordListURL+NA_uuid+'?page=0&size=20',true)
-            xhr.responseType='json'
-            xhr.send()
-            xhr.onreadystatechange = function() {
-                if (xhr.readyState == 4) {
-                    if (xhr.status == 200) {
-                        console.log(xhr.response)
-                        if (xhr.response.code === CODE.success) {
-                            console.log('get historyRecord list')
-                            success(xhr.response.data)
-                        }else {
-                            console.log('not get historyRecord list')
-                            failure(xhr.response.message)
-                        }
-                    }
+            NA_ajax({
+                type:"GET",
+                url:URL.historyRecordListURL+NA_uuid+'?page=0&size=20',
+                dataType:"json",
+                success:function(msg){
+                    console.log(msg)
+                    console.log('get historyRecord list')
+                    success(msg.data)
+                },
+                error:function(msg){
+                    console.log("error")
+                    console.log('not get historyRecord list')
+                    failure(msg.message)
                 }
-            }
+            })
         }
     }
 
