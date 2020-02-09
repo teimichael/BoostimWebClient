@@ -11,12 +11,15 @@
     const SOCKET_ENDPOINT = '/boostimsocket';
 
     const URL = {
+        register: CENTER_SERVER + '/access/register',
         login: CENTER_SERVER + '/access/login',
         logout: CENTER_SERVER + '/access/logout',
         getNodeAddress: CENTER_SERVER + '/node/get/best',
         connectNode: CENTER_SERVER + '/node/connect',
+        userInfoURL: CENTER_SERVER + '/user/get/info',
         conversationListURL: CENTER_SERVER + '/conversation/get/list/',
-        historyRecordListURL: CENTER_SERVER + '/history/get/'
+        historyRecordListURL: CENTER_SERVER + '/history/get/',
+        clearUnread: CENTER_SERVER + '/conversation/clear/unread'
     };
 
     const SUBSCRIBE = {
@@ -106,6 +109,10 @@
     }
 
     let NABootSocket = {
+        AuthRegister: function(NA_username,NA_password) {
+            this.username = NA_username
+            this.password = NA_password
+        },
         AuthLogin: function(NA_username,NA_password) {
             this.username = NA_username
             this.password = NA_password
@@ -129,7 +136,22 @@
         sendGroupMessage: function (NA_msg) {
             stompClient.send(SEND.groupChannel, {}, JSON.stringify(NA_msg));
         },
-        connect(NA_authLogin,NA_connectCallbacks) {
+        register: function (NA_authRegister) {
+            NA_ajax({
+                type:"POST",
+                url:URL.register,
+                dataType:"json",
+                data:JSON.stringify(NA_authRegister),
+                contentType:'application/json',
+                success:function(data){
+                    console.log(data.message)
+                },
+                error:function(){
+                    console.log("register error")
+                }
+            })
+        },
+        connect: function (NA_authLogin,NA_connectCallbacks) {
             // Login by HTTP request to obtain token
             NA_ajax({
                 type:"POST",
@@ -138,7 +160,6 @@
                 data:JSON.stringify(NA_authLogin),
                 contentType:'application/json',
                 success:function(data){
-                    console.log(data)
                     if (data.code === CODE.success) {
                         globalData.token = data.data;
                         console.log('Login successfully with token:');
@@ -149,11 +170,11 @@
                     }
                 },
                 error:function(){
-                    console.log("error")
+                    console.log("connect error")
                 }
             })
         },
-        getNodeAddress(NA_connectCallbacks) {
+        getNodeAddress: function (NA_connectCallbacks) {
             NA_ajax({
                 type:"GET",
                 url:URL.getNodeAddress,
@@ -162,7 +183,6 @@
                     xhr.setRequestHeader("Authorization", globalData.token);
                 },
                 success:function(data){
-                    console.log(data)
                     if (data.code === CODE.success) {
                         globalData.node = data.data;
                         console.log('Obtain node successfully:');
@@ -173,7 +193,7 @@
                     }
                 },
                 error:function(){
-                    console.log("error")
+                    console.log("getNodeAddress error")
                 }
             })
         },
@@ -201,10 +221,9 @@
                         xhr.setRequestHeader("Authorization", globalData.token);
                     },
                     success:function(data){
-                        console.log(data)
                         if (data.code === CODE.success) {
                             success(data.data.uuid)
-                            console.log('Connected');
+                            console.log('ConnectNode Successful');
                             NABootSocket.subscribeChannel(receivePrivate,receiveGroup,receiveNotify);
                         } else {
                             failure(data.message)
@@ -212,12 +231,12 @@
                         }
                     },
                     error:function(){
-                        console.log("error")
+                        console.log("ConnectNode error")
                     }
                 })
             });
         },
-        subscribeChannel(receivePrivate,receiveGroup,receiveNotify) {
+        subscribeChannel: function (receivePrivate,receiveGroup,receiveNotify) {
             // Subscribe private chat channel
             stompClient.subscribe(SUBSCRIBE.privateChannel, function (data) {
                 data = JSON.parse(data.body);
@@ -251,7 +270,7 @@
                 }
             });
         },
-        disconnect(fn) {
+        disconnect: function (fn) {
             let func = fn || function() {}
             NABootSocket.logout();
             if (stompClient !== null) {
@@ -260,7 +279,7 @@
             func();
             console.log("Disconnected");
         },
-        logout() {
+        logout: function() {
             NA_ajax({
                 type:"POST",
                 url:URL.logout,
@@ -269,7 +288,6 @@
                     xhr.setRequestHeader("Authorization", globalData.token);
                 },
                 success:function(data){
-                    console.log(data)
                     if (data.code === CODE.success) {
                         console.log('Logout successfully.');
                     } else {
@@ -277,7 +295,55 @@
                     }
                 },
                 error:function(){
-                    console.log("error")
+                    console.log("Logout error")
+                }
+            })
+        },
+        getUserInfo: function() {
+            NA_ajax({
+                type:"GET",
+                url:URL.userInfoURL,
+                dataType:"json",
+                beforeSend:function(xhr){
+                    xhr.setRequestHeader("Authorization", globalData.token);
+                },
+                success:function(data){
+                    console.log('userInfo:')
+                    console.log(data)
+                    if(data.data.unreadList) {
+                        let conversation = data.data.unreadList.split(',')
+                        let conversationKeys = []
+                        let conversationKey = []
+                        for(let i=0;i<conversation.length;i++) {
+                            conversationKeys[i] = conversation[i].split(':')
+                            let conversationObject = {
+                                uuid: conversationKeys[i][0],
+                                num: conversationKeys[i][1]
+                            }
+                            conversationKey[i] = conversationObject
+                        }
+                        console.log("unreadList: " + JSON.stringify(conversationKey))
+                    }
+                },
+                error:function(){
+                    console.log("getUserInfo error")
+                }
+            })
+        },
+        clearUnread: function(NA_conversationUuid) {
+            NA_ajax({
+                type:"POST",
+                url:URL.clearUnread+'?conversationUuid='+NA_conversationUuid,
+                dataType:"json",
+                beforeSend:function(xhr){
+                    xhr.setRequestHeader("Authorization", globalData.token);
+                },
+                success:function(response){
+                    console.log('clearUnread:')
+                    console.log(response)
+                },
+                error:function(){
+                    console.log("clearUnread error")
                 }
             })
         },
@@ -289,13 +355,14 @@
                 type:"GET",
                 url:URL.conversationListURL+NA_uuid,
                 dataType:"json",
+                beforeSend:function(xhr){
+                    xhr.setRequestHeader("Authorization", globalData.token);
+                },
                 success:function(msg){
-                    console.log(msg)
                     console.log('get conversation list')
                     success(msg.data)
                 },
                 error:function(msg){
-                    console.log("error")
                     console.log('not get conversation list')
                     failure(msg.message)
                 }
@@ -309,13 +376,18 @@
                 type:"GET",
                 url:URL.historyRecordListURL+NA_uuid+'?page=0&size=20',
                 dataType:"json",
+                beforeSend:function(xhr){
+                    xhr.setRequestHeader("Authorization", globalData.token);
+                },
                 success:function(msg){
-                    console.log(msg)
-                    console.log('get historyRecord list')
-                    success(msg.data)
+                    if(msg.code === 200){
+                        console.log('get historyRecord list')
+                        success(msg.data)
+                    }else {
+                        failure(msg.message)
+                    }
                 },
                 error:function(msg){
-                    console.log("error")
                     console.log('not get historyRecord list')
                     failure(msg.message)
                 }

@@ -4,6 +4,7 @@ function connect() {
     let authLogin = new NABootSocket.AuthLogin($('#username').val(),$('#password').val())
     let connectCallbacks = new NABootSocket.ConnectCallbacks({
         onSuccess: function (data) {
+            NABootSocket.getUserInfo()
             $('#my-uuid').val(data);
             setConnected(true);
             console.log('Connected');
@@ -11,6 +12,7 @@ function connect() {
                 onSuccess: function (data) {
                     console.log(data)
                     for(let i=0;i<data.length;i++) {
+                        console.log("conversationUuid: "+data[i].uuid)
                         NABootSocket.getHistoryRecordList(data[i].uuid, {
                             onSuccess: function (data) {
                                 console.log(data)
@@ -22,6 +24,8 @@ function connect() {
                                 console.log(data)
                             }
                         })
+                        NABootSocket.clearUnread(data[i].uuid)
+                        NABootSocket.getUserInfo()
                     }
                 },
                 onFailure: function (data) {
@@ -193,6 +197,10 @@ function disconnect() {
         }
     });
 }*/
+function userRegister() {
+    let authRegister = new NABootSocket.AuthRegister($('#username').val(),$('#password').val())
+    NABootSocket.register(authRegister)
+}
 
 function sendPrivateMessage() {
     let message = new NABootSocket.Message($("#my-uuid").val(),$("#target-uuid").val(),$("#private-message").val())
@@ -230,6 +238,9 @@ $(function () {
     });
     $("#disconnect").click(function () {
         disconnect();
+    });
+    $("#register").click(function () {
+        userRegister();
     });
     $("#send-private").click(function () {
         sendPrivateMessage();
